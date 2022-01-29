@@ -7,7 +7,7 @@
                       "VOLUME /web-maker",
                       "EXPOSE 80",
                       "ADD start.sh /start.sh",
-                      "ADD * /web-maker",
+                      "ADD * /web-maker/",
                       "RUN yarn install",
                       "RUN yarn build",
                       "CMD yarn serve"
