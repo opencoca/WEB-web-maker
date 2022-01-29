@@ -1,0 +1,15 @@
+{
+ "schemaVersion" :2 ,
+ "dockerfileLines": [
+                      "FROM node:alpine3.12",
+                      "RUN apk update && apk upgrade",
+                      "WORKDIR /web-maker",
+                      "VOLUME /web-maker",
+                      "EXPOSE 80",
+                      "ADD start.sh /start.sh",
+                      "RUN yarn install",
+                      "RUN yarn build",
+                      "CMD yarn serve"
+                    ]
+}
+
