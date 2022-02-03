@@ -1,7 +1,7 @@
 {
  "schemaVersion" :2 ,
  "dockerfileLines": [
-                      "FROM node:10-alpine3.12",
+                      "FROM node:10-alpine",
                       "RUN apk update && apk upgrade",
                       "ENV PYTHONUNBUFFERED=1",
                       "RUN apk add --update --no-cache python3 && ln -sf python3 /usr/bin/python",
