@@ -1,8 +1,8 @@
-# Web-Maker ![Build](https://travis-ci.org/chinchang/web-maker.svg?branch=master) [![code style: prettier](https://img.shields.io/badge/code_style-prettier-ff69b4.svg?style=flat-square)](https://github.com/prettier/prettier) 
+# Web-Maker 🕸🛠
 
 ---
 
-**Web-Maker** is an offline playground for your web experiments. Something like CodePen or JSFiddle, but much more faster and offline supported because it runs completely on your system.
+**Web-Maker** is an offline playground for your web experiments. Something like CodePen or JSFiddle, but much more faster and works offline because it runs completely on your system.
 
 ## [Open Web App](https://webmaker.app/app/) (Recommended: More features. More fun!)
 
@@ -44,14 +44,16 @@ Support with $ETH - 0x39989c0E53cfdcF6792e09d7573c65E911e774bA
 If not that, you can support by simply sharing about how much you love 💖 [@webmakerapp](https://twitter.com/webmakerApp).
 
 ## Sponsors
+
 [![](https://user-images.githubusercontent.com/379918/134402085-15cf29bc-2266-4b2d-9354-1830adc4a240.png)](https://cssbattle.dev)
 
-
-Web Maker stays stable as rock with every release, thanks to the sponsored testing on the awesome 
+Web Maker stays stable as rock with every release, thanks to the sponsored testing on the awesome
 <a href="http://browserstack.com/"><img alt="Browserstack logo" src="https://user-images.githubusercontent.com/379918/134403020-50167453-223a-4841-8ef6-312219bcb2e6.png" height="60"></a>
+
+Deployed on the superfast [Netlify](https://www.netlify.com/) platform.
 
 ## License
 
 MIT Licensed
 
-Copyright (c) 2016-2021 Kushagra Gour, [webmaker.app](https://webmaker.app)
+Copyright (c) 2016-2022 Kushagra Gour, [webmaker.app](https://webmaker.app)

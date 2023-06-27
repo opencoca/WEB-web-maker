@@ -2,14 +2,19 @@ import { h, Component } from 'preact';
 import CodeEditor from './CodeEditor.jsx';
 import { computeHtml, computeCss, computeJs } from '../computes';
 import { modes, HtmlModes, CssModes, JsModes } from '../codeModes';
-import { log, writeFile, loadJS, getCompleteHtml } from '../utils';
+import {
+	log,
+	writeFile,
+	getCompleteHtml,
+	handleModeRequirements,
+	sanitizeSplitSizes
+} from '../utils';
 import { SplitPane } from './SplitPane.jsx';
 import { trackEvent } from '../analytics';
-import CodeMirror from '../CodeMirror';
 import { Console } from './Console';
-import { deferred } from '../deferred';
 import CssSettingsModal from './CssSettingsModal';
 import { PreviewDimension } from './PreviewDimension.jsx';
+import Modal from './Modal.jsx';
 const minCodeWrapSize = 33;
 
 /* global htmlCodeEl
@@ -21,6 +26,7 @@ export default class ContentWrap extends Component {
 		this.state = {
 			isConsoleOpen: false,
 			isCssSettingsModalOpen: false,
+			isPreviewNotWorkingModalVisible: false,
 			logs: []
 		};
 
@@ -39,19 +45,21 @@ export default class ContentWrap extends Component {
 		// `clearConsole` is on window because it gets called from inside iframe also.
 		window.clearConsole = this.clearConsole.bind(this);
 
-		this.consoleHeaderDblClickHandler = this.consoleHeaderDblClickHandler.bind(
-			this
-		);
-		this.clearConsoleBtnClickHandler = this.clearConsoleBtnClickHandler.bind(
-			this
-		);
+		this.consoleHeaderDblClickHandler =
+			this.consoleHeaderDblClickHandler.bind(this);
+		this.clearConsoleBtnClickHandler =
+			this.clearConsoleBtnClickHandler.bind(this);
 		this.toggleConsole = this.toggleConsole.bind(this);
 		this.evalConsoleExpr = this.evalConsoleExpr.bind(this);
+		this.dismissPreviewNotWorkingModal =
+			this.dismissPreviewNotWorkingModal.bind(this);
 	}
 	shouldComponentUpdate(nextProps, nextState) {
 		return (
 			this.state.isConsoleOpen !== nextState.isConsoleOpen ||
 			this.state.isCssSettingsModalOpen !== nextState.isCssSettingsModalOpen ||
+			this.state.isPreviewNotWorkingModalVisible !==
+				nextState.isPreviewNotWorkingModalVisible ||
 			this.state.logs !== nextState.logs ||
 			this.state.codeSplitSizes !== nextState.codeSplitSizes ||
 			this.state.mainSplitSizes !== nextState.mainSplitSizes ||
@@ -123,8 +131,12 @@ export default class ContentWrap extends Component {
 	}
 
 	createPreviewFile(html, css, js) {
+		const versionMatch = navigator.userAgent.match(/Chrome\/(\d+)/);
+
 		const shouldInlineJs =
-			!window.webkitRequestFileSystem || !window.IS_EXTENSION;
+			!window.webkitRequestFileSystem ||
+			!window.IS_EXTENSION ||
+			(versionMatch && +versionMatch[1] >= 104);
 		var contents = getCompleteHtml(
 			html,
 			css,
@@ -274,6 +286,19 @@ export default class ContentWrap extends Component {
 						this.showErrors(resultItem.errors.lang, resultItem.errors.data);
 					}
 				});
+
+				const versionMatch = navigator.userAgent.match(/Chrome\/(\d+)/);
+				if (
+					result[2].code &&
+					versionMatch &&
+					+versionMatch[1] >= 104 &&
+					window.IS_EXTENSION &&
+					!window.sessionStorage.getItem('previewErrorMessageDismissed')
+				) {
+					this.setState({
+						isPreviewNotWorkingModalVisible: true
+					});
+				}
 			});
 		}
 
@@ -313,17 +338,16 @@ export default class ContentWrap extends Component {
 
 		// Replace correct css file in LINK tags's href
 		if (prefs.editorTheme) {
-			window.editorThemeLinkTag.href = `lib/codemirror/theme/${
-				prefs.editorTheme
-			}.css`;
+			window.editorThemeLinkTag.href = `lib/codemirror/theme/${prefs.editorTheme}.css`;
 		}
 
-		window.fontStyleTag.textContent = window.fontStyleTemplate.textContent.replace(
-			/fontname/g,
-			(prefs.editorFont === 'other'
-				? prefs.editorCustomFont
-				: prefs.editorFont) || 'FiraCode'
-		);
+		window.fontStyleTag.textContent =
+			window.fontStyleTemplate.textContent.replace(
+				/fontname/g,
+				(prefs.editorFont === 'other'
+					? prefs.editorCustomFont
+					: prefs.editorFont) || 'FiraCode'
+			);
 	}
 
 	// Check all the code wrap if they are minimized or maximized
@@ -334,7 +358,7 @@ export default class ContentWrap extends Component {
 			const { currentLayoutMode } = this.props;
 			const prop =
 				currentLayoutMode === 2 || currentLayoutMode === 5 ? 'width' : 'height';
-			[htmlCodeEl, cssCodeEl, jsCodeEl].forEach(function(el) {
+			[htmlCodeEl, cssCodeEl, jsCodeEl].forEach(function (el) {
 				const bounds = el.getBoundingClientRect();
 				const size = bounds[prop];
 				if (size < 100) {
@@ -391,12 +415,18 @@ export default class ContentWrap extends Component {
 
 	resetSplitting() {
 		this.setState({
-			codeSplitSizes: this.getCodeSplitSizes(),
-			mainSplitSizes: this.getMainSplitSizesToApply()
+			codeSplitSizes: sanitizeSplitSizes(this.getCodeSplitSizes()),
+			mainSplitSizes: sanitizeSplitSizes(this.getMainSplitSizesToApply())
 		});
 	}
-	updateSplits() {
-		this.props.onSplitUpdate();
+	updateSplits(sizes) {
+		// HACK: This is weird thing happening. We call `onSplitUpdate` on parent. That calculates
+		// and sets sizes from the DOM on the currentItem. And then we read that size to update
+		// this component's state (codeSplitSizes and mainSPlitSizes).
+		// If we don't update, then some re-render will reset the pane sizes as ultimately the state
+		// variables here govern the split.
+		this.props.onSplitUpdate(sizes);
+
 		// Not using setState to avoid re-render
 		this.state.codeSplitSizes = this.props.currentItem.sizes;
 		this.state.mainSplitSizes = this.props.currentItem.mainSizes;
@@ -426,7 +456,7 @@ export default class ContentWrap extends Component {
 		return [33.33, 33.33, 33.33];
 	}
 
-	mainSplitDragEndHandler() {
+	mainSplitDragEndHandler(sizes) {
 		if (this.props.prefs.refreshOnResize) {
 			// Running preview updation in next call stack, so that error there
 			// doesn't affect this dragend listener.
@@ -434,7 +464,7 @@ export default class ContentWrap extends Component {
 				this.setPreviewContent(true);
 			}, 1);
 		}
-		this.updateSplits();
+		this.updateSplits(sizes);
 	}
 	mainSplitDragHandler() {
 		this.previewDimension.update({
@@ -445,84 +475,38 @@ export default class ContentWrap extends Component {
 	codeSplitDragStart() {
 		document.body.classList.add('is-dragging');
 	}
-	codeSplitDragEnd() {
+	codeSplitDragEnd(sizes) {
 		this.updateCodeWrapCollapseStates();
 		document.body.classList.remove('is-dragging');
-		this.updateSplits();
-	}
-	/**
-	 * Loaded the code comiler based on the mode selected
-	 */
-	handleModeRequirements(mode) {
-		const baseTranspilerPath = 'lib/transpilers';
-		// Exit if already loaded
-		var d = deferred();
-		if (modes[mode].hasLoaded) {
-			d.resolve();
-			return d.promise;
-		}
-
-		function setLoadedFlag() {
-			modes[mode].hasLoaded = true;
-			d.resolve();
-		}
-
-		if (mode === HtmlModes.JADE) {
-			loadJS(`${baseTranspilerPath}/jade.js`).then(setLoadedFlag);
-		} else if (mode === HtmlModes.MARKDOWN) {
-			loadJS(`${baseTranspilerPath}/marked.js`).then(setLoadedFlag);
-		} else if (mode === CssModes.LESS) {
-			loadJS(`${baseTranspilerPath}/less.min.js`).then(setLoadedFlag);
-		} else if (mode === CssModes.SCSS || mode === CssModes.SASS) {
-			loadJS(`${baseTranspilerPath}/sass.js`).then(function() {
-				window.sass = new Sass(`${baseTranspilerPath}/sass.worker.js`);
-				setLoadedFlag();
-			});
-		} else if (mode === CssModes.STYLUS) {
-			loadJS(`${baseTranspilerPath}/stylus.min.js`).then(setLoadedFlag);
-		} else if (mode === CssModes.ACSS) {
-			loadJS(`${baseTranspilerPath}/atomizer.browser.js`).then(setLoadedFlag);
-		} else if (mode === JsModes.COFFEESCRIPT) {
-			loadJS(`${baseTranspilerPath}/coffee-script.js`).then(setLoadedFlag);
-		} else if (mode === JsModes.ES6) {
-			loadJS(`${baseTranspilerPath}/babel.min.js`).then(setLoadedFlag);
-		} else if (mode === JsModes.TS) {
-			loadJS(`${baseTranspilerPath}/typescript.js`).then(setLoadedFlag);
-		} else {
-			d.resolve();
-		}
-
-		return d.promise;
+		this.updateSplits(sizes);
 	}
 
 	updateHtmlMode(value) {
 		this.props.onCodeModeChange('html', value);
 		this.props.currentItem.htmlMode = value;
 		this.cm.html.setLanguage(value);
-		return this.handleModeRequirements(value);
+		return handleModeRequirements(value);
 	}
 	updateCssMode(value) {
 		this.props.onCodeModeChange('css', value);
 		this.props.currentItem.cssMode = value;
 		this.cm.css.setOption('readOnly', modes[value].cmDisable);
-		window.cssSettingsBtn.classList[
-			modes[value].hasSettings ? 'remove' : 'add'
-		]('hide');
 		this.cm.css.setLanguage(value);
-		return this.handleModeRequirements(value);
+		return handleModeRequirements(value);
 	}
 	updateJsMode(value) {
 		this.props.onCodeModeChange('js', value);
 		this.props.currentItem.jsMode = value;
 		this.cm.js.setLanguage(value);
-		return this.handleModeRequirements(value);
+		return handleModeRequirements(value);
 	}
 	codeModeChangeHandler(e) {
 		var mode = e.target.value;
 		var type = e.target.dataset.type;
-		var currentMode = this.props.currentItem[
-			type === 'html' ? 'htmlMode' : type === 'css' ? 'cssMode' : 'jsMode'
-		];
+		var currentMode =
+			this.props.currentItem[
+				type === 'html' ? 'htmlMode' : type === 'css' ? 'cssMode' : 'jsMode'
+			];
 		if (currentMode !== mode) {
 			if (type === 'html') {
 				this.updateHtmlMode(mode).then(() => this.setPreviewContent(true));
@@ -641,6 +625,13 @@ export default class ContentWrap extends Component {
 	}
 	prettifyBtnClickHandler(codeType) {
 		this.props.onPrettifyBtnClick(codeType);
+	}
+
+	dismissPreviewNotWorkingModal() {
+		this.setState({
+			isPreviewNotWorkingModalVisible: false
+		});
+		window.sessionStorage.setItem('previewErrorMessageDismissed', true);
 	}
 
 	render() {
@@ -776,17 +767,19 @@ export default class ContentWrap extends Component {
 								</select>
 							</label>
 							<div class="code-wrap__header-right-options">
-								<a
-									href="#"
-									id="cssSettingsBtn"
-									title="Atomic CSS configuration"
-									onClick={this.cssSettingsBtnClickHandler.bind(this)}
-									class="code-wrap__header-btn hide"
-								>
-									<svg>
-										<use xlinkHref="#settings-icon" />
-									</svg>
-								</a>
+								{modes[this.props.currentItem.cssMode || 'css'].hasSettings && (
+									<a
+										href="#"
+										id="cssSettingsBtn"
+										title="Atomic CSS configuration"
+										onClick={this.cssSettingsBtnClickHandler.bind(this)}
+										class="code-wrap__header-btn"
+									>
+										<svg>
+											<use xlinkHref="#settings-icon" />
+										</svg>
+									</a>
+								)}
 								<a
 									class="code-wrap__header-btn "
 									title="Format code"
@@ -919,6 +912,7 @@ export default class ContentWrap extends Component {
 						toggleConsole={this.toggleConsole}
 						onEvalInputKeyup={this.evalConsoleExpr}
 					/>
+
 					<CssSettingsModal
 						show={this.state.isCssSettingsModalOpen}
 						closeHandler={() =>
@@ -928,6 +922,34 @@ export default class ContentWrap extends Component {
 						settings={this.props.currentItem.cssSettings}
 						editorTheme={this.props.prefs.editorTheme}
 					/>
+
+					<Modal
+						show={this.state.isPreviewNotWorkingModalVisible}
+						closeHandler={this.dismissPreviewNotWorkingModal}
+					>
+						<h1>🔴 JavaScript preview not working!</h1>
+						<p>
+							Latest version of Chrome has changed a few things because of which
+							JavaScript preview has stopped working.
+						</p>
+
+						<p>
+							If you want to work with just HTML & CSS, you can still continue
+							here. Otherwise, it is recommended to switch to the Web Maker web
+							app which is much more powerful and works offline too -{' '}
+							<a href="https://webmaker.app/app" target="_blank">
+								Go to web app
+							</a>
+						</p>
+						<div class="flex flex-h-end">
+							<button
+								class="btn btn--primary"
+								onClick={this.dismissPreviewNotWorkingModal}
+							>
+								Dismiss
+							</button>
+						</div>
+					</Modal>
 				</div>
 			</SplitPane>
 		);
